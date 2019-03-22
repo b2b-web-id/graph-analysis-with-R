@@ -1,0 +1,132 @@
+---
+title: "French Train"
+author: "YHT"
+date: "8 Maret 2019"
+output:
+  flexdashboard::flex_dashboard:
+  orientation: rows
+  vertical_layout: fill
+  theme: bootstrap
+  source_code: embed
+  social: [ "twitter" ]
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidygraph)
+library(ggraph)
+library(dplyr)
+library(readr)
+library(stringr)
+library(shiny)
+
+small_trains <- read_rds("trains.rds")
+routes <- small_trains %>% 
+  group_by(departure_station, arrival_station) %>% 
+  summarise(journey_time = mean( )) %>% 
+  ungroup() %>% 
+  mutate(from=departure_station, to=arrival_station) %>% 
+  select(from, to, journey_time)
+graph_routes <- as_tbl_graph(routes)
+graph_routes <- graph_routes %>% 
+  activate(nodes) %>% 
+  mutate(title=str_to_title(name), label=str_replace_all(title, " ", "\n"))
+stations <- graph_routes %>% 
+  activate(nodes) %>% 
+  pull(title)
+
+sts <- as.list(seq_along(stations))
+names(sts) <- stations
+```
+
+Column  {.sidebar}
+---------------------------------------------------------------------------
+
+```{r}
+selectInput("station1",
+            "Station 1:",
+            choices = sts,
+            selected = "34",
+            selectize = FALSE)
+```
+
+```{r}
+selectInput("station2",
+            "Station 2:",
+            choices = sts,
+            selected = "28",
+            selectize = FALSE)
+```
+
+Row
+---------------------------------------------------------------------------
+
+### Trip total
+
+```{r}
+valueBoxOutput("trip")
+```
+
+### Total stops
+
+```{r}
+valueBoxOutput("stop")
+```
+
+Row
+---------------------------------------------------------------------------
+
+### Shortest path
+    
+```{r}
+plotOutput("map")
+```
+
+
+
+```{r server}
+thm <- theme_minimal() +
+  theme(legend.position = "none", axis.title = element_blank(),
+        axis.text = element_blank(), panel.grid = element_blank(),
+        panel.grid.major = element_blank())
+theme_set(thm)
+shortest <- reactive({
+  from <- as.integer(input$station1)
+  to <- as.integer(input$station2)
+  graph_routes %>% 
+    morph(to_shortest_path, from, to, weights=journey_time) %>% 
+    mutate(selected_node=TRUE) %>% 
+    activate(edges) %>% 
+    mutate(selected_edge=TRUE) %>% 
+    unmorph() %>% 
+    activate(nodes) %>% 
+    mutate(selected_node=ifelse(is.na(selected_node),1,2)) %>% 
+    activate(edges) %>% 
+    mutate(selected_edge=ifelse(is.na(selected_edge),1,2)) %>% 
+    arrange(selected_edge)
+})
+output$trip <- renderValueBox({
+  total_time <- shortest() %>% 
+    activate(edges) %>% 
+    filter(selected_edge == 2) %>% 
+    pull(journey_time) %>% 
+    sum()
+  valueBox(value=round(total_time/60), icon="fa-train")
+})
+output$stop <- renderValueBox({
+  stops <- shortest() %>% 
+    activate(edges) %>% 
+    filter(selected_edge == 2) %>% 
+    pull(journey_time)
+  valueBox(value=length(stops)-1, icon="fa-hand-paper",
+           color="#009E73")
+})
+output$map <- renderPlot({
+  shortest() %>% 
+    ggraph(layout="kk") +
+    geom_edge_diagonal(aes(alpha=selected_edge), color="gray") +
+    geom_node_text(aes(label=label, color=name, alpha=selected_node),
+                   size=3)
+})
+```
