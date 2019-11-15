@@ -24,7 +24,7 @@ library(shiny)
 small_trains <- read_rds("trains.rds")
 routes <- small_trains %>% 
   group_by(departure_station, arrival_station) %>% 
-  summarise(journey_time = mean( )) %>% 
+  summarise(journey_time = mean(journey_time_avg)) %>% 
   ungroup() %>% 
   mutate(from=departure_station, to=arrival_station) %>% 
   select(from, to, journey_time)
